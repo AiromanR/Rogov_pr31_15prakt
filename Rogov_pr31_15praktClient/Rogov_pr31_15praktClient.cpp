@@ -5,81 +5,126 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <iphlpapi.h>
+#include <stdio.h>
+#include <string>
+
+#define DEFAULT_BUFLEN 512
 
 #pragma comment(lib, "Ws2_32.lib")
 
-int main(int argc, char* argv[]) {
-	WSADATA wsaData;
-	int iResult;
-	iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
-	if (iResult != 0) {
-		printf("WSAStartup failed: %d\n", iResult);
-		return 1;
-	}
+SOCKET ConnectSocket = INVALID_SOCKET;
+bool connected = true;
 
-	#define DEFAULT_PORT "27015" 
+DWORD WINAPI forRecvThr(LPVOID) {
+    char recvbuf[DEFAULT_BUFLEN];
 
-	struct addrinfo* result = NULL, * ptr = NULL, hints;
-	ZeroMemory(&hints, sizeof(hints));
+    while (connected) {
+        int iResult = recv(ConnectSocket, recvbuf, DEFAULT_BUFLEN, 0);
 
-	hints.ai_family = AF_UNSPEC;
-	hints.ai_socktype = SOCK_STREAM;
-	hints.ai_protocol = IPPROTO_TCP;
+        if (iResult > 0) {
+            recvbuf[iResult] = '\0';
+            std::cout << recvbuf << std::endl;
+        }
+        else {
+            std::cout << "[SERVER]: Соединение разорвано" << std::endl;
+            connected = false;
+            break;
+        }
+    }
 
-	char ip[255] = "192.168.110.105";
+    return 0;
+}
 
-	iResult = getaddrinfo(ip, DEFAULT_PORT, &hints, &result);
-	if (iResult != 0) {
-		printf("getaddrinfo failed: %d\n", iResult);
-		WSACleanup();
-		return 1;
-	}
+int main() {
+    //setlocale(0, "rus");
+    SetConsoleCP(1251);
+    SetConsoleOutputCP(1251);
 
-	SOCKET ConnectSocket = INVALID_SOCKET;
-	ptr = result;
 
-	ConnectSocket = socket(ptr->ai_family, ptr->ai_socktype, ptr->ai_protocol);
+    //------------------------БЕЗ ИЗМЕНЕНИЙ ИЗ ПРЕЗЕНТАЦИИ------------------------
+    WSADATA wsaData;
+    int iResult;
+    iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
+    if (iResult != 0) {
+        printf("WSAStartup failed: %d\n", iResult);
+        return 1;
+    }
+#define DEFAULT_PORT "27015" 
+    struct addrinfo* result = NULL, * ptr = NULL, hints;
+    ZeroMemory(&hints, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_protocol = IPPROTO_TCP;
+    //------------------------БЕЗ ИЗМЕНЕНИЙ ИЗ ПРЕЗЕНТАЦИИ------------------------
 
-	if (ConnectSocket == INVALID_SOCKET) {
-		printf("Error at socket(): %ld\n", WSAGetLastError());
-		freeaddrinfo(result);
-		WSACleanup();
-		return 1;
-	}
 
-	iResult = connect(ConnectSocket, ptr->ai_addr, (int)ptr->ai_addrlen);
-	if (iResult == SOCKET_ERROR) {
-		closesocket(ConnectSocket);
-		ConnectSocket = INVALID_SOCKET;
-	}
+    std::string ip;
+    std::cout << "Введите IP сервера (по умолчанию поставил 192.168.0.102): ";
+    std::getline(std::cin, ip);
+    if (ip.empty()) {
+        ip = "192.168.0.102";
+    }
 
-	const int buflen = 512;
-	const char* sendbuf = "this is a test";
-	char recbuf[buflen];
-	iResult = 0;
-	iResult = send(ConnectSocket, sendbuf, (int)strlen(sendbuf), 0);
-	if (iResult == SOCKET_ERROR) {
-		printf("send failed: %d\n", WSAGetLastError());
-		closesocket(ConnectSocket); WSACleanup();
-		return 1;
-	}
-	printf("Bytes Sent: %ld\n", iResult);
 
-	do {
-		iResult = recv(ConnectSocket, recbuf, buflen, 0);
-		if (iResult > 0)
-			printf("Bytes received: %d\n", iResult);
-		else if (iResult == 0)
-			printf("Connection closed\n");
-		else
-			printf("recv failed: %d\n", WSAGetLastError());
-	} while (iResult > 0);
+    //---------------------(почти)БЕЗ ИЗМЕНЕНИЙ ИЗ ПРЕЗЕНТАЦИИ--------------------
+    if (getaddrinfo(ip.c_str(), DEFAULT_PORT, &hints, &result) != 0) {
+        printf("getaddrinfo failed: %d\n", iResult);
+        WSACleanup();
+        return 1;
+    }
+    ConnectSocket = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
+    if (ConnectSocket == INVALID_SOCKET) {
+        printf("Error at socket(): %ld\n", WSAGetLastError());
+        WSACleanup();
+        return 1;
+    }
+    if (connect(ConnectSocket, result->ai_addr, (int)result->ai_addrlen) == SOCKET_ERROR) {
+        printf("Error at socket(): %ld\n", WSAGetLastError());
+        closesocket(ConnectSocket);
+        WSACleanup();
+        return 1;
+    }
+    freeaddrinfo(result);
+    if (ConnectSocket == INVALID_SOCKET) {
+        printf("Error at socket(): %ld\n", WSAGetLastError());
+        WSACleanup();
+        return 1;
+    }
+    //---------------------(почти)БЕЗ ИЗМЕНЕНИЙ ИЗ ПРЕЗЕНТАЦИИ--------------------
 
-	iResult = shutdown(ConnectSocket, SD_SEND);
-	if (iResult == SOCKET_ERROR) {
-		printf("shutdown failed: %d\n", WSAGetLastError());
-		closesocket(ConnectSocket);
-		WSACleanup();
-		return 1;
-	}
+
+    std::cout << "Подключено к серверу!" << std::endl;
+    std::cout << "Введите ваше имя: ";
+
+    std::string name;
+    std::getline(std::cin, name);
+    send(ConnectSocket, name.c_str(), (int)name.length(), 0);
+
+    CreateThread(NULL, 0, forRecvThr, NULL, 0, NULL);
+
+
+    std::cout << "\nДоступные команды:" << std::endl;
+    std::cout << "  /exit - выход из чата" << std::endl;
+    std::cout << "  /users - список пользователей" << std::endl;
+    std::cout << "\nВведите сообщение: " << std::endl;
+
+    std::string message;
+    while (connected) {
+        std::getline(std::cin, message);
+
+        if (message.empty()) continue;
+
+        send(ConnectSocket, message.c_str(), (int)message.length(), 0);
+
+        if (message == "/exit") {
+            connected = false;
+            break;
+        }
+    }
+
+    shutdown(ConnectSocket, SD_SEND);
+    closesocket(ConnectSocket);
+    WSACleanup();
+    std::cout << "Вы вышли из чата." << std::endl;
+    return 0;
 }
