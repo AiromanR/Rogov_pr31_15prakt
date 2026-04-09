@@ -28,7 +28,6 @@ DWORD WINAPI forRecvThr(LPVOID) {
         else {
             std::cout << "[SERVER]: Соединение разорвано" << std::endl;
             connected = false;
-            break;
         }
     }
 

@@ -93,6 +93,7 @@ DWORD WINAPI ClientHandler(LPVOID indx) {
         else if (iResult == 0 || iResult == SOCKET_ERROR) {
             clients[index].active = false;
             std::string leaveMsg = "[SERVER]: " + clients[index].name + " отключился";
+            clientCount--;
             Messagening(leaveMsg, clients[index].socket);
         }
     }
